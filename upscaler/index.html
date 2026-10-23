@@ -1,0 +1,596 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="only light">
+<title>AI zvětšení obrázků</title>
+<style>html,body{margin:0;background:#fff;color-scheme:only light}</style>
+</head>
+<body>
+<div id="ups-host"></div>
+<template id="ups-tpl">
+<style>
+  :host{all:initial;display:block;color-scheme:only light;
+    
+    --bg:#ffffff; --panel:#f6f7f9; --line:#e2e5ea; --text:#1b1f24; --muted:#667080;
+    --accent:#2f5bea; --accent-ink:#ffffff; --accent-soft:#e8eefe; --ok:#1f8a4c; --err:#c0392b;
+    --radius:12px;
+  }
+  *{box-sizing:border-box}
+  .app{background:var(--bg);color:var(--text);
+    font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif}
+  .wrap{max-width:900px;margin:0 auto;padding:16px}
+  h1{font-size:20px;margin:0 0 4px}
+  .head{display:flex;align-items:flex-start;gap:12px}
+  .head > div:first-child{flex:1}
+  .lang{display:flex;border:1px solid var(--line);border-radius:999px;overflow:hidden;flex:none}
+  .lang button{border:0;border-radius:0;padding:5px 10px;font-size:13px;background:#fff;color:var(--muted)}
+  .lang button[aria-pressed=true]{background:var(--accent-soft);color:var(--accent);font-weight:600}
+  .sub{color:var(--muted);margin:0 0 16px;font-size:14px}
+
+  .drop{border:2px dashed var(--line);border-radius:var(--radius);background:var(--panel);
+    padding:28px 16px;text-align:center;cursor:pointer;transition:border-color .15s,background .15s}
+  .drop:hover,.drop.over{border-color:var(--accent);background:var(--accent-soft)}
+  .drop strong{display:block;font-size:16px;margin-bottom:4px}
+  .drop span{color:var(--muted);font-size:13px}
+  .drop.small{padding:10px 14px;display:flex;align-items:center;gap:12px;text-align:left}
+  .drop.small img{width:56px;height:56px;object-fit:cover;border-radius:8px;background:#fff}
+  .drop.small strong{font-size:14px;margin:0}
+
+  .row{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin:14px 0}
+  .seg{display:flex;flex-wrap:wrap;gap:6px}
+  .seg label{position:relative;cursor:pointer}
+  .seg input{position:absolute;opacity:0;pointer-events:none}
+  .seg span{display:block;padding:8px 12px;border:1px solid var(--line);border-radius:999px;font-size:14px;background:#fff}
+  .seg b{font-weight:inherit}
+  .seg small{color:var(--muted);margin-left:4px}
+  .seg input:checked + span{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
+  .seg input:focus-visible + span{outline:2px solid var(--accent);outline-offset:2px}
+
+  button{font:inherit;border-radius:999px;border:1px solid var(--line);background:#fff;color:var(--text);
+    padding:9px 16px;cursor:pointer}
+  button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  .spacer{flex:1}
+
+  .status{font-size:13px;color:var(--muted);min-height:20px}
+  .status.err{color:var(--err)} .status.ok{color:var(--ok)}
+  .bar{height:6px;background:var(--line);border-radius:3px;overflow:hidden;margin-top:6px;display:none}
+  .bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .15s}
+
+  .viewer{margin-top:12px;display:none}
+  .stage{position:relative;margin:0 auto;border-radius:8px;overflow:hidden;background:
+    repeating-conic-gradient(#eef0f3 0 25%,#fff 0 50%) 0 0/16px 16px;user-select:none;touch-action:none}
+  .stage img{position:absolute;inset:0;width:100%;height:100%;display:block;pointer-events:none}
+  .stage .after{clip-path:inset(0 0 0 50%)}
+  .handle{position:absolute;top:0;bottom:0;left:50%;width:2px;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.25);pointer-events:none}
+  .handle::after{content:"";position:absolute;top:50%;left:50%;width:30px;height:30px;margin:-15px 0 0 -15px;
+    border-radius:50%;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.35)}
+  .tag{position:absolute;top:8px;padding:2px 8px;font-size:12px;border-radius:4px;background:rgba(0,0,0,.6);color:#fff;pointer-events:none}
+  .tag.l{left:8px} .tag.r{right:8px}
+  .scroller{max-width:100%;overflow:auto;border-radius:8px}
+  .scroller.zoom{max-height:560px}
+
+  .meta{font-size:13px;color:var(--muted)}
+  .note{font-size:12px;color:var(--muted);margin-top:16px;border-top:1px solid var(--line);padding-top:10px}
+  a.dl{display:none}
+  /* ochrana proti stylům okolní stránky a ztmavování */
+  img{opacity:1 !important;filter:none !important;mix-blend-mode:normal !important;max-width:none !important;
+    box-shadow:none !important;border:0 !important;margin:0 !important;padding:0 !important}
+  .stage img{width:100% !important;height:100% !important}
+  .stage::before,.stage::after{content:none !important}
+</style>
+<div class="app"><div class="wrap">
+  <div class="head">
+    <div>
+      <h1 data-i18n="title"></h1>
+      <p class="sub" data-i18n="subtitle"></p>
+    </div>
+    <div class="lang" role="group" aria-label="Jazyk / Language">
+      <button type="button" data-lang="cs">CZ</button><button type="button" data-lang="en">EN</button>
+    </div>
+  </div>
+
+  <div class="drop" id="drop" tabindex="0" role="button" data-i18n-aria="pick">
+    <strong data-i18n="dropTitle"></strong>
+    <span data-i18n="dropHint"></span>
+  </div>
+  <input type="file" id="file" accept="image/*" hidden>
+
+  <div class="row">
+    <div class="seg" role="radiogroup" aria-label="Model">
+      <label><input type="radio" name="model" value="anime4" checked><span><b data-i18n="mAnime4"></b><small>Real-ESRGAN</small></span></label>
+      <label><input type="radio" name="model" value="anime2"><span><b data-i18n="mAnime2"></b><small>Real-CUGAN</small></span></label>
+      <label><input type="radio" name="model" value="photo4"><span><b data-i18n="mPhoto4"></b><small>Real-ESRGAN</small></span></label>
+    </div>
+    <div class="spacer"></div>
+    <button class="primary" id="go" disabled data-i18n="go"></button>
+    <button id="stop" hidden data-i18n="stop"></button>
+  </div>
+
+  <div class="status" id="status"></div>
+  <div class="bar" id="bar"><i></i></div>
+
+  <div class="viewer" id="viewer">
+    <div class="row">
+      <span class="meta" id="meta"></span>
+      <div class="spacer"></div>
+      <button id="zoom"></button>
+      <button id="ret" class="primary" hidden data-i18n="sendBack"></button>
+      <button id="dlpng" class="primary" data-i18n="dlPng"></button>
+      <button id="dljpg">JPG</button>
+    </div>
+    <div class="scroller" id="scroller">
+      <div class="stage" id="stage">
+        <img id="imgBefore" alt="">
+        <img id="imgAfter" class="after" alt="">
+        <div class="handle" id="handle"></div>
+        <span class="tag l" data-i18n="before"></span><span class="tag r">AI</span>
+      </div>
+    </div>
+  </div>
+  <a class="dl" id="dl"></a>
+
+  <p class="note"><span data-i18n="note"></span>
+    <span data-i18n="models"></span> <a href="https://github.com/xinntao/Real-ESRGAN" target="_blank" rel="noopener">Real-ESRGAN</a> (BSD-3), <a href="https://github.com/bilibili/ailab/tree/main/Real-CUGAN" target="_blank" rel="noopener">Real-CUGAN</a> (MIT).</p>
+</div>
+
+</div>
+</template>
+<script>
+(() => {
+  // ---- konfigurace ---------------------------------------------------------
+  // Vlastní umístění souborů (GitHub Pages). Adresa musí končit lomítkem.
+  // Prázdné = použije se jen veřejné CDN jsDelivr.
+  const MY_ASSETS = 'https://luboshort.github.io/images/upscaler/';
+
+  // Zdroje se zkoušejí v pořadí: nejdřív vlastní, při chybě záložní CDN.
+  const CDN = 'https://cdn.jsdelivr.net/npm/';
+  const own = MY_ASSETS && !MY_ASSETS.includes('UZIVATEL') ? MY_ASSETS : null;
+  const sources = (mine, cdn) => own ? [own + mine, cdn] : [cdn];
+  const TFJS = sources('lib/tf.min.js', CDN + '@tensorflow/tfjs@4.22.0/dist/tf.min.js');
+  const TF_WEBGPU = sources('lib/tf-backend-webgpu.min.js', CDN + '@tensorflow/tfjs-backend-webgpu@4.22.0/dist/tf-backend-webgpu.min.js');
+  const MODEL_BASES = sources('models/', CDN + '@plotdb/upscaler@0.0.5/models/');
+  const MODELS = {
+    anime4: { path: 'realesrgan/anime_fast-64', scale: 4 },
+    anime2: { path: 'realcugan/2x-conservative-64', scale: 2 },
+    photo4: { path: 'realesrgan/general_fast-64', scale: 4 },
+  };
+  const TILE = 64, OVERLAP = 8, STEP = TILE - 2 * OVERLAP;
+  const MAX_OUT_PIXELS = 64e6, MAX_OUT_SIDE = 16384;
+
+  // ---- texty CZ / EN -------------------------------------------------------
+  const I18N = {
+    cs: {
+      title: 'AI zvětšení obrázků',
+      subtitle: 'Vše běží přímo ve vašem prohlížeči – obrázek se nikam neodesílá.',
+      pick: 'Vybrat obrázek',
+      dropTitle: 'Přetáhněte sem obrázek',
+      dropHint: 'nebo klikněte pro výběr · JPG, PNG, WebP',
+      fileInfo: (w, h) => `${w} × ${h} px · klikněte pro jiný obrázek`,
+      mAnime4: 'Kresba 4×', mAnime2: 'Kresba 2×', mPhoto4: 'Fotka 4×',
+      go: 'Zvětšit', stop: 'Zrušit',
+      zoomIn: 'Skutečná velikost', zoomOut: 'Přizpůsobit',
+      dlPng: 'Stáhnout PNG', before: 'Původní',
+      note: 'První spuštění stáhne model (1–3 MB) a připraví grafickou kartu, takže chvíli trvá. Rychlost závisí na zařízení – na počítači s WebGPU jde o sekundy, na slabším telefonu i minuty.',
+      models: 'Modely:',
+      notImage: 'Tohle není obrázek.',
+      loadFail: 'Obrázek se nepodařilo načíst.',
+      tooBig: (w, h) => `Výsledek by měl ${w} × ${h} px, to je na prohlížeč příliš. Zkuste 2× nebo menší obrázek.`,
+      loadingLib: 'Načítám knihovnu…',
+      downloading: p => `Stahuji model… ${p} %`,
+      cpu: 'Grafická karta není dostupná, počítám na procesoru – bude to pomalé…',
+      starting: 'Zvětšuji… (první dlaždice chvíli trvá, připravuje se GPU)',
+      progress: (d, t, r) => `Zvětšuji… ${d}/${t} dlaždic` + (r != null ? ` · zbývá cca ${r} s` : ''),
+      done: (s, b) => `Hotovo za ${s} s (${b}).`,
+      cancelled: 'Zrušeno.',
+      error: m => 'Chyba: ' + m,
+      fileBase: 'obrazek',
+      sendBack: 'Vrátit do stránky',
+      sent: 'Výsledek byl odeslán zpět do stránky.',
+      waiting: 'Čekám na obrázek ze stránky…',
+      urlFail: 'Obrázek z této adresy nejde načíst (server to nepovoluje). Nahrajte ho prosím ručně.',
+      openerGone: 'Původní stránka už není otevřená, výsledek si stáhněte.',
+    },
+    en: {
+      title: 'AI image upscaler',
+      subtitle: 'Everything runs right in your browser – your image is never uploaded.',
+      pick: 'Choose an image',
+      dropTitle: 'Drop an image here',
+      dropHint: 'or click to browse · JPG, PNG, WebP',
+      fileInfo: (w, h) => `${w} × ${h} px · click to choose another image`,
+      mAnime4: 'Drawing 4×', mAnime2: 'Drawing 2×', mPhoto4: 'Photo 4×',
+      go: 'Upscale', stop: 'Cancel',
+      zoomIn: 'Actual size', zoomOut: 'Fit',
+      dlPng: 'Download PNG', before: 'Original',
+      note: 'The first run downloads the model (1–3 MB) and warms up the graphics card, so it takes a moment. Speed depends on the device – seconds on a computer with WebGPU, up to minutes on a slower phone.',
+      models: 'Models:',
+      notImage: "That's not an image.",
+      loadFail: "The image couldn't be loaded.",
+      tooBig: (w, h) => `The result would be ${w} × ${h} px, which is too large for the browser. Try 2× or a smaller image.`,
+      loadingLib: 'Loading library…',
+      downloading: p => `Downloading model… ${p} %`,
+      cpu: 'No graphics card available, running on the CPU – this will be slow…',
+      starting: 'Upscaling… (the first tile takes a moment while the GPU warms up)',
+      progress: (d, t, r) => `Upscaling… ${d}/${t} tiles` + (r != null ? ` · about ${r} s left` : ''),
+      done: (s, b) => `Done in ${s} s (${b}).`,
+      cancelled: 'Cancelled.',
+      error: m => 'Error: ' + m,
+      fileBase: 'image',
+      sendBack: 'Send back to page',
+      sent: 'The result was sent back to the page.',
+      waiting: 'Waiting for an image from the page…',
+      urlFail: "The image can't be loaded from this address (the server doesn't allow it). Please upload it manually.",
+      openerGone: 'The original page is no longer open – please download the result.',
+    },
+  };
+  const LANG_KEY = 'upscaler-lang';
+  const store = {
+    get() { try { return localStorage.getItem(LANG_KEY); } catch { return null; } },
+    set(v) { try { localStorage.setItem(LANG_KEY, v); } catch { /* úložiště zakázané */ } },
+  };
+  const params = new URLSearchParams(location.search);
+  let lang = I18N[params.get('lang')] ? params.get('lang') : store.get();
+  if (!I18N[lang]) lang = /^(cs|sk)\b/i.test(navigator.language || '') ? 'cs' : 'en';
+  const t = (k, ...a) => { const v = I18N[lang][k]; return typeof v === 'function' ? v(...a) : v; };
+
+  // ---- prvky ---------------------------------------------------------------
+  const host = document.getElementById('ups-host');
+  const tpl = document.getElementById('ups-tpl');
+  const root = host.attachShadow({ mode: 'open' });
+  root.append(tpl.content.cloneNode(true));
+  const $ = id => root.getElementById(id);
+  const drop = $('drop'), fileIn = $('file'), go = $('go'), stop = $('stop');
+  const statusEl = $('status'), bar = $('bar'), barFill = bar.firstElementChild;
+  const viewer = $('viewer'), stage = $('stage'), scroller = $('scroller');
+  const imgBefore = $('imgBefore'), imgAfter = $('imgAfter'), handle = $('handle');
+
+  let srcImage = null, srcName = 'image', resultCanvas = null, backend = null;
+  let cancelled = false, busy = false, zoomed = false, split = 0.5;
+  const models = {};
+
+  let lastStatus = null; // [klíč, argumenty, třída]
+  const renderStatus = () => {
+    statusEl.textContent = lastStatus ? t(lastStatus[0], ...lastStatus[1]) : '';
+    statusEl.className = 'status ' + (lastStatus ? lastStatus[2] : '');
+  };
+  const setStatus = (key, args = [], cls = '') => { lastStatus = key ? [key, args, cls] : null; renderStatus(); };
+
+  function applyLang() {
+    root.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
+    root.querySelectorAll('[data-i18n-aria]').forEach(el => el.setAttribute('aria-label', t(el.dataset.i18nAria)));
+    root.querySelectorAll('[data-lang]').forEach(b => b.setAttribute('aria-pressed', b.dataset.lang === lang));
+    document.documentElement.lang = lang;
+    imgBefore.alt = t('before'); imgAfter.alt = 'AI';
+    $('zoom').textContent = t(zoomed ? 'zoomOut' : 'zoomIn');
+    if (srcImage) $('fileInfo').textContent = t('fileInfo', srcImage.naturalWidth, srcImage.naturalHeight);
+    renderStatus();
+  }
+  root.querySelectorAll('[data-lang]').forEach(b => b.addEventListener('click', () => {
+    lang = b.dataset.lang; store.set(lang); applyLang();
+  }));
+  const setProgress = p => {
+    bar.style.display = p == null ? 'none' : 'block';
+    barFill.style.width = ((p || 0) * 100).toFixed(1) + '%';
+  };
+  const nextFrame = () => new Promise(r => requestAnimationFrame(() => r()));
+  const loadOne = src => new Promise((res, rej) => {
+    const s = document.createElement('script'); s.src = src; s.crossOrigin = 'anonymous';
+    s.onload = res; s.onerror = () => { s.remove(); rej(new Error('Nepodařilo se načíst ' + src)); };
+    document.head.appendChild(s);
+  });
+  async function loadScript(list) {
+    let err;
+    for (const src of list) {
+      try { return await loadOne(src); } catch (e) { err = e; console.warn(e.message); }
+    }
+    throw err;
+  }
+
+  // ---- výběr souboru -------------------------------------------------------
+  drop.addEventListener('click', () => fileIn.click());
+  drop.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileIn.click(); } });
+  fileIn.addEventListener('change', () => fileIn.files[0] && openFile(fileIn.files[0]));
+  ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
+  ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
+  drop.addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f) openFile(f); });
+  window.addEventListener('paste', e => {
+    const f = [...(e.clipboardData?.files || [])].find(f => f.type.startsWith('image/'));
+    if (f) openFile(f);
+  });
+
+  async function openFile(file, name = file.name || '') {
+    if (busy) return false;
+    if (file.type && !file.type.startsWith('image/')) { setStatus('notImage', [], 'err'); return false; }
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    try { img.src = url; await img.decode(); }
+    catch { setStatus('loadFail', [], 'err'); return false; }
+    srcImage = img; srcName = name.replace(/\.[^.]+$/, '') || t('fileBase');
+    resultCanvas = null; viewer.style.display = 'none';
+    drop.className = 'drop small';
+    drop.innerHTML = '';
+    const thumb = new Image(); thumb.src = url; thumb.alt = '';
+    const txt = document.createElement('div');
+    txt.innerHTML = '<strong></strong><span id="fileInfo"></span>';
+    txt.querySelector('strong').textContent = name || t('fileBase');
+    txt.querySelector('span').textContent = t('fileInfo', img.naturalWidth, img.naturalHeight);
+    drop.append(thumb, txt);
+    go.disabled = false;
+    setStatus(null);
+    ensureTf().catch(() => {}); // předem načíst knihovnu
+    return true;
+  }
+
+  // ---- TensorFlow.js -------------------------------------------------------
+  let tfPromise = null;
+  function ensureTf() {
+    if (!tfPromise) tfPromise = (async () => {
+      await loadScript(TFJS);
+      tf.env().set('WEBGL_PACK', true);
+      if (navigator.gpu) {
+        try {
+          await loadScript(TF_WEBGPU);
+          if (await tf.setBackend('webgpu')) { await tf.ready(); return (backend = 'webgpu'); }
+        } catch (e) { console.warn('WebGPU nedostupné', e); }
+      }
+      if (await tf.setBackend('webgl')) { await tf.ready(); return (backend = 'webgl'); }
+      await tf.setBackend('cpu'); await tf.ready();
+      return (backend = 'cpu');
+    })().catch(e => { tfPromise = null; throw e; });
+    return tfPromise;
+  }
+
+  async function getModel(key) {
+    if (models[key]) return models[key];
+    const { path } = MODELS[key];
+    const cacheKey = 'indexeddb://upscaler-' + path.replace(/\W/g, '_');
+    let model;
+    try { model = await tf.loadGraphModel(cacheKey); }
+    catch {
+      let err;
+      for (const base of MODEL_BASES) {
+        try {
+          model = await tf.loadGraphModel(base + path + '/model.json', {
+            onProgress: f => { setStatus('downloading', [Math.round(f * 100)]); setProgress(f); }
+          });
+          break;
+        } catch (e) { err = e; console.warn('Model nedostupný z ' + base, e); }
+      }
+      if (!model) throw err;
+      try { await model.save(cacheKey); } catch (e) { /* v iframe může být úložiště zakázané */ }
+    }
+    return (models[key] = model);
+  }
+
+  // ---- zvětšení po dlaždicích ---------------------------------------------
+  function positions(len) {
+    const out = [];
+    for (let x = 0; ; x += STEP) {
+      out.push(Math.min(x, len - TILE));
+      if (x + TILE >= len) break;
+    }
+    return [...new Set(out)];
+  }
+
+  async function upscale() {
+    if (!srcImage || busy) return;
+    const key = root.querySelector('input[name=model]:checked').value;
+    const { scale } = MODELS[key];
+    const W = srcImage.naturalWidth, H = srcImage.naturalHeight;
+    const OW = W * scale, OH = H * scale;
+    if (OW > MAX_OUT_SIDE || OH > MAX_OUT_SIDE || OW * OH > MAX_OUT_PIXELS) {
+      return setStatus('tooBig', [OW, OH], 'err');
+    }
+
+    busy = true; cancelled = false;
+    go.disabled = true; stop.hidden = false; drop.style.pointerEvents = 'none';
+    setProgress(0);
+    const t0 = performance.now();
+    let full = null;
+    try {
+      setStatus('loadingLib');
+      await ensureTf();
+      const model = await getModel(key);
+
+      // vstup doplněný na min. 64×64 (opakováním krajních pixelů)
+      const PW = Math.max(W, TILE), PH = Math.max(H, TILE);
+      const c = document.createElement('canvas'); c.width = PW; c.height = PH;
+      const cx = c.getContext('2d', { willReadFrequently: true });
+      cx.drawImage(srcImage, 0, 0);
+      if (PW > W) cx.drawImage(c, W - 1, 0, 1, H, W, 0, PW - W, H);
+      if (PH > H) cx.drawImage(c, 0, H - 1, PW, 1, 0, H, PW, PH - H);
+      const srcData = cx.getImageData(0, 0, PW, PH);
+      let hasAlpha = false;
+      for (let i = 3; i < srcData.data.length; i += 4) if (srcData.data[i] < 255) { hasAlpha = true; break; }
+
+      full = tf.tidy(() => tf.browser.fromPixels(srcData).toFloat().div(255));
+      const out = document.createElement('canvas'); out.width = OW; out.height = OH;
+      const ox = out.getContext('2d');
+
+      const xs = positions(PW), ys = positions(PH);
+      const total = xs.length * ys.length, T = TILE * scale;
+      let done = 0;
+      setStatus(backend === 'cpu' ? 'cpu' : 'starting');
+
+      for (let yi = 0; yi < ys.length; yi++) {
+        for (let xi = 0; xi < xs.length; xi++) {
+          if (cancelled) throw new Error('cancel');
+          const x = xs[xi], y = ys[yi];
+          const pix = tf.tidy(() => {
+            const tile = full.slice([y, x, 0], [TILE, TILE, 3]).expandDims(0);
+            const r = model.predict(tile);
+            return r.squeeze([0]).clipByValue(0, 1).mul(255).round().toInt();
+          });
+          const data = await tf.browser.toPixels(pix); pix.dispose();
+          // použijeme jen vnitřek dlaždice, okraje se překrývají se sousedy
+          const ml = xi === 0 ? 0 : OVERLAP, mr = xi === xs.length - 1 ? 0 : OVERLAP;
+          const mt = yi === 0 ? 0 : OVERLAP, mb = yi === ys.length - 1 ? 0 : OVERLAP;
+          ox.putImageData(new ImageData(data, T, T), x * scale, y * scale,
+            ml * scale, mt * scale, (TILE - ml - mr) * scale, (TILE - mt - mb) * scale);
+          done++;
+          setProgress(done / total);
+          bridge.progress(done / total);
+          if (done === 1 || done % 4 === 0) {
+            const el = (performance.now() - t0) / 1000;
+            const rest = done > 2 ? Math.round(el / done * (total - done)) : null;
+            setStatus('progress', [done, total, rest]);
+            await nextFrame();
+          }
+        }
+      }
+
+      if (hasAlpha) { // průhlednost zvětšíme klasicky a přeneseme
+        const a = document.createElement('canvas'); a.width = OW; a.height = OH;
+        const ax = a.getContext('2d'); ax.imageSmoothingQuality = 'high';
+        ax.drawImage(srcImage, 0, 0, OW, OH);
+        const ad = ax.getImageData(0, 0, OW, OH).data, od = ox.getImageData(0, 0, OW, OH);
+        for (let i = 3; i < ad.length; i += 4) od.data[i] = ad[i];
+        ox.putImageData(od, 0, 0);
+      }
+
+      resultCanvas = out;
+      await showResult(key);
+      const secs = ((performance.now() - t0) / 1000).toFixed(1);
+      setStatus('done', [secs, backend.toUpperCase()], 'ok');
+      bridge.finished();
+    } catch (e) {
+      if (e.message === 'cancel') setStatus('cancelled');
+      else { console.error(e); setStatus('error', [e.message || String(e)], 'err'); }
+    } finally {
+      if (full) full.dispose();
+      busy = false; go.disabled = !srcImage; stop.hidden = true; drop.style.pointerEvents = '';
+      setProgress(null);
+    }
+  }
+
+  go.addEventListener('click', upscale);
+  stop.addEventListener('click', () => { cancelled = true; });
+
+  // ---- porovnání -----------------------------------------------------------
+  async function showResult(key) {
+    const blob = await new Promise(r => resultCanvas.toBlob(r, 'image/png'));
+    if (imgAfter.src.startsWith('blob:')) URL.revokeObjectURL(imgAfter.src);
+    imgAfter.src = URL.createObjectURL(blob);
+    imgBefore.src = srcImage.src;
+    await imgAfter.decode().catch(() => {});
+    $('meta').textContent = `${srcImage.naturalWidth} × ${srcImage.naturalHeight} → ${resultCanvas.width} × ${resultCanvas.height} px`;
+    viewer.style.display = 'block';
+    zoomed = false; $('zoom').textContent = t('zoomIn');
+    layout(); setSplit(0.5);
+  }
+
+  function layout() {
+    if (!resultCanvas) return;
+    const w = resultCanvas.width, h = resultCanvas.height;
+    if (zoomed) {
+      stage.style.width = w + 'px'; stage.style.height = h + 'px';
+      scroller.classList.add('zoom');
+    } else {
+      const maxW = scroller.parentElement.clientWidth, maxH = 520;
+      const k = Math.min(maxW / w, maxH / h, 1);
+      stage.style.width = Math.round(w * k) + 'px'; stage.style.height = Math.round(h * k) + 'px';
+      scroller.classList.remove('zoom');
+    }
+  }
+  window.addEventListener('resize', layout);
+
+  function setSplit(f) {
+    split = Math.min(1, Math.max(0, f));
+    imgAfter.style.clipPath = `inset(0 0 0 ${split * 100}%)`;
+    handle.style.left = split * 100 + '%';
+  }
+  let dragging = false;
+  const fromEvent = e => { const r = stage.getBoundingClientRect(); setSplit((e.clientX - r.left) / r.width); };
+  stage.addEventListener('pointerdown', e => { dragging = true; stage.setPointerCapture(e.pointerId); fromEvent(e); });
+  stage.addEventListener('pointermove', e => dragging && fromEvent(e));
+  stage.addEventListener('pointerup', () => { dragging = false; });
+  stage.addEventListener('pointercancel', () => { dragging = false; });
+
+  $('zoom').addEventListener('click', () => {
+    zoomed = !zoomed; $('zoom').textContent = t(zoomed ? 'zoomOut' : 'zoomIn'); layout();
+  });
+
+  // ---- stažení -------------------------------------------------------------
+  async function download(type, ext) {
+    if (!resultCanvas) return;
+    let canvas = resultCanvas;
+    if (type === 'image/jpeg') { // JPG nemá průhlednost – podložíme bílou
+      canvas = document.createElement('canvas'); canvas.width = resultCanvas.width; canvas.height = resultCanvas.height;
+      const x = canvas.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, canvas.width, canvas.height); x.drawImage(resultCanvas, 0, 0);
+    }
+    const blob = await new Promise(r => canvas.toBlob(r, type, 0.92));
+    const url = URL.createObjectURL(blob);
+    const a = $('dl'); a.href = url; a.download = `${srcName}_${resultCanvas.width}x${resultCanvas.height}.${ext}`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  }
+  $('dlpng').addEventListener('click', () => download('image/png', 'png'));
+  $('dljpg').addEventListener('click', () => download('image/jpeg', 'jpg'));
+
+  // ---- okenní režim: obrázek ze stránky a výsledek zpět --------------------
+  // Stránka otevře toto okno (window.open) a pošle zprávu:
+  //   { type:'upscaler-input', id, image: Blob | dataURL | URL, name,
+  //     options: { model:'anime4'|'anime2'|'photo4', autostart, autoReturn, close } }
+  // Okno odpoví { type:'upscaler-result', id, blob, width, height, model }.
+  const bridge = (() => {
+    const parent = window.opener;
+    let req = null, replyTo = '*', readyTimer = null;
+    const post = msg => { try { parent && !parent.closed && parent.postMessage(msg, replyTo); return true; } catch { return false; } };
+
+    async function sendBack() {
+      if (!req || !resultCanvas) return;
+      if (!parent || parent.closed) return setStatus('openerGone', [], 'err');
+      const blob = await new Promise(r => resultCanvas.toBlob(r, 'image/png'));
+      const ok = post({ type: 'upscaler-result', id: req.id, blob, width: resultCanvas.width, height: resultCanvas.height,
+        model: root.querySelector('input[name=model]:checked').value, name: srcName + '_' + resultCanvas.width + 'x' + resultCanvas.height + '.png' });
+      if (!ok) return setStatus('openerGone', [], 'err');
+      setStatus('sent', [], 'ok');
+      if (req.options.close) setTimeout(() => window.close(), 150);
+    }
+    $('ret').addEventListener('click', sendBack);
+
+    if (parent) {
+      setStatus('waiting');
+      // ohlásíme připravenost, dokud stránka nepošle obrázek (max. 15 s)
+      let tries = 0;
+      const ready = () => { post({ type: 'upscaler-ready' }); if (++tries > 30) { clearInterval(readyTimer); if (!req) setStatus(null); } };
+      ready(); readyTimer = setInterval(ready, 500);
+
+      window.addEventListener('message', async e => {
+        if (e.source !== parent || !e.data || e.data.type !== 'upscaler-input') return;
+        clearInterval(readyTimer);
+        replyTo = e.origin && e.origin !== 'null' ? e.origin : '*';
+        const d = e.data;
+        req = { id: d.id, options: d.options || {} };
+        if (MODELS[req.options.model]) root.querySelector(`input[name=model][value=${req.options.model}]`).checked = true;
+        let blob = d.image;
+        try {
+          if (typeof blob === 'string') {
+            const r = await fetch(blob, { mode: 'cors' });
+            if (!r.ok) throw new Error(r.status);
+            blob = await r.blob();
+          }
+          if (!(blob instanceof Blob)) throw new Error('bad input');
+        } catch (err) { console.warn(err); return setStatus('urlFail', [], 'err'); }
+        const name = d.name || (typeof d.image === 'string' ? decodeURIComponent(d.image.split(/[?#]/)[0].split('/').pop()) : '');
+        if (await openFile(blob, name) && req.options.autostart) upscale();
+      });
+    }
+
+    return {
+      progress(p) { if (req) post({ type: 'upscaler-progress', id: req.id, progress: p }); },
+      finished() {
+        if (!req) return;
+        $('ret').hidden = false; $('dlpng').classList.remove('primary');
+        if (req.options.autoReturn) sendBack();
+      },
+    };
+  })();
+
+  applyLang();
+})();
+</script>
+</body>
+</html>
